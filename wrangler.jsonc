@@ -1,0 +1,21 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "atalia-agente-exemplo",
+	"main": "src/index.js",
+	"compatibility_date": "2026-10-01",
+	"observability": { "enabled": true },
+
+	// Modelo que responde os clientes (Workers AI, sem chave)
+	"ai": { "binding": "AI" },
+
+	// Conversas, mensagens e configuração do agente.
+	// Sem database_id de propósito: o deploy cria o banco na sua conta e liga ao worker.
+	"d1_databases": [{ "binding": "DB", "database_name": "atalia-agente-exemplo", "migrations_dir": "migrations" }],
+
+	"vars": {
+		"ATALIA_API_URL": "https://chat.atalia.ai/api/v1"
+	}
+
+	// Segredos (nunca neste arquivo): ATALIA_API_KEY, ATALIA_WEBHOOK_SECRET, ADMIN_PASSWORD
+	// e, se quiser usar um modelo da OpenAI, OPENAI_API_KEY. Ver .dev.vars.example.
+}

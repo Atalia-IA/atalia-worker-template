@@ -1,0 +1,41 @@
+{
+	"name": "atalia-agente-exemplo",
+	"version": "0.1.0",
+	"private": true,
+	"description": "Worker de exemplo que recebe as mensagens da Atalia pelo webhook, responde com um agente de IA simples e tem um painel para acompanhar as conversas.",
+	"type": "module",
+	"scripts": {
+		"dev": "wrangler dev",
+		"test": "vitest run",
+		"db:migrate": "wrangler d1 migrations apply DB --remote",
+		"db:migrate:local": "wrangler d1 migrations apply DB --local",
+		"deploy": "wrangler deploy && wrangler d1 migrations apply DB --remote",
+		"preview": "node --no-warnings test/preview-server.mjs"
+	},
+	"devDependencies": {
+		"vitest": "^3.2.4",
+		"wrangler": "^4.96.0"
+	},
+	"engines": {
+		"node": ">=22.13"
+	},
+	"cloudflare": {
+		"bindings": {
+			"ATALIA_API_KEY": {
+				"description": "Chave da empresa na Atalia (`atk_live_...`). Gere no painel da Atalia em **Chave e webhook**."
+			},
+			"ATALIA_WEBHOOK_SECRET": {
+				"description": "Segredo da assinatura do webhook (`whsec_...`). Ele só aparece depois de cadastrar o endereço do webhook na Atalia: deixe `depois` agora e troque no passo 4 do README."
+			},
+			"ADMIN_PASSWORD": {
+				"description": "Senha do painel deste worker (conversas e configuração do agente). Gere uma com `openssl rand -hex 16`."
+			},
+			"DB": {
+				"description": "Banco D1 onde ficam as conversas, as mensagens e a configuração do agente."
+			},
+			"AI": {
+				"description": "Workers AI, o modelo que responde os clientes. Não precisa de chave."
+			}
+		}
+	}
+}

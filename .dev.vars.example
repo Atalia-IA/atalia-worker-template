@@ -1,0 +1,10 @@
+# Copie para .dev.vars para rodar com `npm run dev`. Em produção, cadastre como segredos do worker.
+
+# Chave da empresa na Atalia (painel › Chave e webhook)
+ATALIA_API_KEY=atk_live_coloque_a_sua_chave
+
+# Segredo da assinatura do webhook. Só aparece depois de cadastrar o endereço do webhook na Atalia.
+ATALIA_WEBHOOK_SECRET=depois
+
+# Senha do painel deste worker
+ADMIN_PASSWORD=troque-esta-senha
