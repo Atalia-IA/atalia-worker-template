@@ -47,7 +47,32 @@ export function createAtaliaClient(env) {
 				idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
 			),
 		testWebhook: () => request('POST', '/webhook/test'),
+		// Revenda: cria o cliente e devolve o link da página de conexão (connect_url, 7 dias)
+		createClient: ({ name, email, taxId, ref, sendEmail }) =>
+			request('POST', '/clients', {
+				name,
+				email,
+				...(taxId ? { tax_id: taxId } : {}),
+				...(ref ? { ref } : {}),
+				send_email: !!sendEmail,
+			}),
+		newClientLink: (clientId) => request('POST', `/clients/${encodeURIComponent(clientId)}/invite`, {}),
 	};
+}
+
+/**
+ * Confere o retorno da página de conexão (`/retorno?status=...&t=...&sig=...`):
+ * sig = HMAC-SHA256(segredo do webhook, "<t>.<status>.<client_id>.<ref>.<channels>"), valores crus,
+ * vazio para o que faltar. Recusa retorno assinado há mais de 5 minutos.
+ */
+export async function verifyConnectReturn(params, secret, nowSeconds = Date.now() / 1000) {
+	const get = (k) => params.get(k) || '';
+	const t = Number(get('t'));
+	const sig = get('sig').toLowerCase();
+	if (!secret || !sig || !Number.isFinite(t)) return false;
+	if (Math.abs(nowSeconds - t) > SIGNATURE_TOLERANCE_SECONDS) return false;
+	const expected = await hmacHex(secret, `${get('t')}.${get('status')}.${get('client_id')}.${get('ref')}.${get('channels')}`);
+	return timingSafeEqual(expected, sig);
 }
 
 /**

@@ -145,6 +145,51 @@ export async function latestInboundId(db, conversationId) {
 	return row?.id ?? null;
 }
 
+// ---- Clientes da revenda ----
+
+/** Cria ou atualiza o cliente; campo ausente (null) mantém o que já estava. */
+export async function upsertClient(db, { id, name = null, email = null, taxId = null, ref = null, status, channels = null, connectUrl = null }) {
+	const now = nowIso();
+	await db
+		.prepare(
+			`INSERT INTO clients (id, name, email, tax_id, ref, status, channels, connect_url, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO UPDATE SET
+			   name = COALESCE(excluded.name, clients.name),
+			   email = COALESCE(excluded.email, clients.email),
+			   tax_id = COALESCE(excluded.tax_id, clients.tax_id),
+			   ref = COALESCE(excluded.ref, clients.ref),
+			   status = excluded.status,
+			   channels = COALESCE(excluded.channels, clients.channels),
+			   connect_url = COALESCE(excluded.connect_url, clients.connect_url),
+			   updated_at = excluded.updated_at`,
+		)
+		.bind(id, name, email, taxId, ref, status, channels, connectUrl, now, now)
+		.run();
+}
+
+export async function listClients(db, limit = 200) {
+	const { results } = await db.prepare('SELECT * FROM clients ORDER BY updated_at DESC LIMIT ?').bind(limit).all();
+	return results;
+}
+
+/** Registra um retorno da página de conexão. false = já registrado (a pessoa recarregou a página). */
+export async function recordConnectReturn(db, { status, clientId, ref, channels, signedAt, sig }) {
+	const result = await db
+		.prepare(
+			`INSERT OR IGNORE INTO connect_returns (status, client_id, ref, channels, signed_at, sig, received_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		)
+		.bind(status, clientId || null, ref || null, channels || null, signedAt, sig, nowIso())
+		.run();
+	return result.meta.changes > 0;
+}
+
+export async function recentConnectReturns(db, limit = 15) {
+	const { results } = await db.prepare('SELECT * FROM connect_returns ORDER BY id DESC LIMIT ?').bind(limit).all();
+	return results;
+}
+
 // ---- Configuração ----
 
 async function getSetting(db, key) {

@@ -8,6 +8,8 @@ Um sistema pequeno e completo que usa a [integração via API da Atalia](https:/
 - **Painel de conversas** para ler, responder como pessoa da equipe e pausar ou religar o agente em cada conversa.
 - **Aba Conexão** que confere a chave, mostra o endereço do webhook, avisa se o segredo está errado e manda um evento de teste.
 
+![Painel do worker: lista de conversas e a conversa com uma cliente, em que o agente responde sobre entrega e pagamento](docs/conversas.png)
+
 > É um exemplo, não um produto pronto. Veja [Limites do exemplo](#limites-do-exemplo) antes de usar com clientes de verdade.
 
 ## Antes de começar
@@ -53,6 +55,8 @@ Abra o endereço do worker (ex.: `https://atalia-agente-exemplo.<sua-conta>.work
 
 Na aba **Conexão**, o passo 1 já mostra as suas caixas de entrada se a chave estiver certa. Copie o **endereço do webhook** (termina em `/webhook`).
 
+![Aba Conexão: caixas de entrada encontradas, endereço do webhook, segredo configurado e o botão de teste](docs/conexao.png)
+
 ### 3. Cadastrar o webhook na Atalia
 
 No painel da Atalia, em **Chave e webhook**, cole o endereço e salve. Logo abaixo aparece o **Segredo da assinatura** (`whsec_...`): copie.
@@ -71,6 +75,8 @@ npx wrangler secret put ATALIA_WEBHOOK_SECRET
 2. Mande uma mensagem do seu celular para o número conectado. Em alguns segundos chega a resposta do agente, e a conversa aparece em **Conversas**.
 3. Escreva "quero falar com um atendente": o agente avisa o cliente e pausa naquela conversa. Responda pelo painel e religue o agente no interruptor **Agente responde**.
 
+![Conversa em que o cliente pediu um atendente: o agente avisou e pausou, e uma pessoa da equipe respondeu pelo painel](docs/conversa-pessoa.png)
+
 Se nada chegar, a aba **Conexão** mostra o último evento recusado e o motivo (segredo errado, por exemplo).
 
 ## Como funciona
@@ -86,7 +92,8 @@ Cliente ◀──WhatsApp── Atalia ◀────────────�
 
 | Arquivo | O que faz |
 |---|---|
-| [`src/index.js`](src/index.js) | Rotas: `/webhook`, `/health` e o painel. |
+| [`src/index.js`](src/index.js) | Rotas: `/webhook`, `/retorno`, `/health` e o painel. |
+| [`src/connect-return.js`](src/connect-return.js) | `/retorno`: confere e grava a volta da página de conexão da revenda. |
 | [`src/webhook.js`](src/webhook.js) | Recebe os eventos e decide a resposta do agente. |
 | [`src/agent.js`](src/agent.js) | Configuração do agente, quando chamar uma pessoa e a chamada ao modelo. |
 | [`src/store.js`](src/store.js) | Conversas, mensagens, eventos e configuração no D1. |
@@ -101,11 +108,26 @@ Eventos tratados:
 | `message.received` | Grava a mensagem e o agente responde (texto pela IA; foto, áudio ou arquivo com a resposta configurada). |
 | `message.echo` | Alguém respondeu pelo app do WhatsApp Business, Instagram ou Messenger: grava e pausa o agente na conversa. |
 | `message.status` | Atualiza a mensagem enviada (enviada, entregue, lida ou não enviada, com o motivo). |
-| `ping`, `channel.*`, `client.*` | Só aparecem em **Últimos eventos recebidos**. |
+| `client.connected`, `client.no_slot` | Revenda: grava o cliente (com o `ref` e os canais) na aba **Clientes**. |
+| `ping`, `channel.*` | Só aparecem em **Últimos eventos recebidos**. |
+
+## Revenda: seus clientes conectam os próprios números
+
+Se a sua conta na Atalia está no modo **Integrar e oferecer aos meus clientes**, o worker também cuida da [página de conexão](https://chat.atalia.ai/docs/integracao/clientes):
+
+1. Na aba **Clientes**, copie o **Endereço de retorno** (termina em `/retorno`) e cole na Atalia, em **Página de conexão › Voltar para o seu sistema**.
+2. Ainda em **Clientes**, gere o link de um cliente (nome, e-mail e, se quiser, CNPJ e `ref`, o id dele no seu sistema). O worker chama `POST /api/v1/clients` e mostra o link para mandar.
+3. O cliente abre o link, aceita os termos e conecta o WhatsApp. Ao concluir, volta para `/retorno`, que confere a assinatura (HMAC com o mesmo segredo do webhook, até 5 minutos) e mostra "Tudo certo!". O webhook recebe `client.connected`, e o cliente aparece como **Conectado**.
+
+Dá para usar também o link geral da página com `?ref=<id do usuário>`, sem gerar convite. Desistir (`status=cancelled`) e pacote cheio (`status=no_slot`) também voltam para `/retorno`.
+
+![Aba Clientes: endereço de retorno, gerar link para um cliente, lista de clientes e últimos retornos](docs/clientes.png)
 
 ## O agente
 
 Tudo na aba **Agente** do painel, sem publicar de novo:
+
+![Aba Agente: instruções, modelo, histórico, palavras para chamar uma pessoa e respostas automáticas](docs/agente.png)
 
 | Campo | Padrão |
 |---|---|
@@ -128,7 +150,7 @@ Para a Atalia alcançar o worker local, abra um túnel (ex.: `npx cloudflared tu
 
 ```bash
 npm test         # testes do webhook, do agente e do painel (Node 22.13 ou mais novo)
-npm run preview  # só o painel, com conversas de mentira e sem Cloudflare: http://localhost:8798 (senha "senha")
+npm run preview  # só o painel, com conversas fictícias e sem Cloudflare: http://localhost:8798 (senha "senha"); é de onde saem os prints
 ```
 
 ## Personalizar

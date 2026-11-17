@@ -81,6 +81,7 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .section { padding: 20px 24px; border-bottom: 1px solid var(--line); }
 .section:last-child { border-bottom: none; }
 .section h2 { margin: 0 0 4px; font-size: 16px; }
+.section h3 { margin: 16px 0 4px; font-size: 14px; }
 .field { display: grid; grid-template-columns: 240px 1fr; gap: 16px; padding: 12px 0; align-items: start; }
 .field label { font-weight: 600; padding-top: 8px; }
 .field .hint { display: block; font-weight: 400; color: var(--muted); font-size: 12.5px; margin-top: 2px; }
@@ -96,6 +97,12 @@ code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .step h3 { margin: 2px 0 6px; font-size: 15px; }
 .copy-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .copy-row code { flex: 1; min-width: 0; padding: 8px 10px; background: var(--surface-2); border-radius: 8px; overflow-wrap: anywhere; }
+.client-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; margin-top: 12px; }
+.client-form input[type=text], .client-form input[type=email] { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.client-form .full { grid-column: 1 / -1; }
+.client-form label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; }
+.client-form .switch { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.table-wrap { overflow-x: auto; }
 .alert { padding: 12px 16px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); margin-bottom: 12px; }
 table { width: 100%; border-collapse: collapse; }
 th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -116,6 +123,7 @@ th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 	.field { grid-template-columns: 1fr; gap: 4px; }
 	.field label { padding-top: 0; }
 	.hide-sm { display: none; }
+	.client-form { grid-template-columns: 1fr; }
 }
 </style>
 </head>
@@ -125,6 +133,7 @@ th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 	<nav class="tabs" role="tablist">
 		<button class="tab" role="tab" data-tab="inbox" aria-selected="true">Conversas</button>
 		<button class="tab" role="tab" data-tab="agent">Agente</button>
+		<button class="tab" role="tab" data-tab="clients">Clientes</button>
 		<button class="tab" role="tab" data-tab="connection">Conexão</button>
 	</nav>
 </header>
@@ -137,6 +146,9 @@ th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 	</section>
 	<section data-panel="agent" hidden>
 		<form class="card" id="agent-form"></form>
+	</section>
+	<section data-panel="clients" hidden>
+		<div id="clients"><div class="empty">Carregando…</div></div>
 	</section>
 	<section data-panel="connection" hidden>
 		<div id="connection"><div class="empty">Carregando…</div></div>
@@ -189,6 +201,9 @@ th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 	};
 	const AUTHORS = { contact: 'Cliente', bot: 'Agente', human: 'Você (painel)', app: 'Pelo app' };
 	const STATUS = { pending: 'na fila', sent: 'enviada', delivered: 'entregue', read: 'lida', failed: 'não enviada' };
+	const CHANNEL_TYPES = { whatsapp: 'WhatsApp', whatsapp_web: 'WhatsApp (QR Code)', instagram: 'Instagram', messenger: 'Messenger' };
+	const CHANNEL_STATUS = { active: 'Conectado', inactive: 'Desligado', disconnected: 'Desconectado', pending: 'Pendente' };
+	const channelType = (type) => CHANNEL_TYPES[type] || type || '';
 
 	// ---------- abas ----------
 	let currentTab = 'inbox';
@@ -199,6 +214,7 @@ th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 			document.querySelectorAll('[data-panel]').forEach((p) => (p.hidden = p.dataset.panel !== currentTab));
 			if (currentTab === 'inbox') loadList();
 			if (currentTab === 'agent') loadAgent();
+			if (currentTab === 'clients') loadClients();
 			if (currentTab === 'connection') loadConnection();
 		}),
 	);
@@ -328,7 +344,7 @@ th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 				{ class: 'thread-head' },
 				el('button', { class: 'btn back', type: 'button', text: 'Voltar', onclick: () => { openId = null; document.getElementById('inbox').classList.remove('open'); loadList(); } }),
 				el('span', { class: 'avatar', text: initials(c.contact_name || c.contact_phone) }),
-				el('div', { class: 'grow' }, el('div', { class: 'conv-name', text: c.contact_name || 'Contato' }), el('div', { class: 'muted mono', text: [c.contact_phone, c.channel_type, c.channel_id].filter(Boolean).join(' · ') })),
+				el('div', { class: 'grow' }, el('div', { class: 'conv-name', text: c.contact_name || 'Contato' }), el('div', { class: 'muted mono', text: [c.contact_phone, channelType(c.channel_type), c.channel_id].filter(Boolean).join(' · ') })),
 				el('label', { class: 'switch' }, toggle, el('span', { class: 'hide-sm', text: 'Agente responde' })),
 			),
 			list,
@@ -451,7 +467,7 @@ th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 					s.channels_error ? el('p', {}, el('span', { class: 'pill pill-danger', text: 'Erro' }), ' ', s.channels_error) : null,
 					Array.isArray(s.channels)
 						? s.channels.length
-							? el('table', {}, el('tr', {}, el('th', { text: 'Caixa de entrada' }), el('th', { text: 'Tipo' }), el('th', { text: 'ID' }), el('th', { text: 'Situação' })), s.channels.map((ch) => el('tr', {}, el('td', { text: ch.name || ch.phone || ch.username || ch.page_name || '' }), el('td', { text: ch.type }), el('td', { class: 'mono', text: ch.id }), el('td', {}, el('span', { class: 'pill ' + (ch.status === 'active' ? 'pill-ok' : 'pill-warn'), text: ch.status })))))
+							? el('table', {}, el('tr', {}, el('th', { text: 'Caixa de entrada' }), el('th', { text: 'Tipo' }), el('th', { text: 'ID' }), el('th', { text: 'Situação' })), s.channels.map((ch) => el('tr', {}, el('td', { text: ch.name || ch.phone || ch.username || ch.page_name || '' }), el('td', { text: channelType(ch.type) }), el('td', { class: 'mono', text: ch.id }), el('td', {}, el('span', { class: 'pill ' + (ch.status === 'active' ? 'pill-ok' : 'pill-warn'), text: CHANNEL_STATUS[ch.status] || ch.status })))))
 							: el('p', { class: 'muted', text: 'A chave funciona, mas nenhuma caixa de entrada está conectada. Conecte uma no painel da Atalia.' })
 						: null,
 				),
@@ -474,6 +490,150 @@ th { color: var(--muted); font-weight: 600; font-size: 12.5px; }
 				),
 			)].filter(Boolean),
 		);
+	}
+
+	// ---------- clientes (revenda) ----------
+	const CLIENT_STATUS = {
+		invited: ['', 'Convite enviado'],
+		in_progress: ['pill-warn', 'Em andamento'],
+		connected: ['pill-ok', 'Conectado'],
+		no_slot: ['pill-danger', 'Sem vaga no pacote'],
+	};
+	const RETURN_STATUS = { connected: ['pill-ok', 'Concluiu'], cancelled: ['', 'Desistiu'], no_slot: ['pill-danger', 'Sem vaga'] };
+
+	async function loadClients() {
+		const box = document.getElementById('clients');
+		let data;
+		try {
+			data = await api('/clients');
+		} catch (error) {
+			box.replaceChildren(el('div', { class: 'empty', text: error.message }));
+			return;
+		}
+		const copyBtn = (value) => el('button', { class: 'btn', type: 'button', text: 'Copiar', onclick: () => navigator.clipboard.writeText(value).then(() => toast('Copiado.')) });
+		const pill = ([kind, label]) => el('span', { class: 'pill ' + kind, text: label });
+
+		const linkBox = el('div', { class: 'copy-row', hidden: true });
+		const name = el('input', { type: 'text', name: 'name', required: true, autocomplete: 'off' });
+		const email = el('input', { type: 'email', name: 'email', required: true, autocomplete: 'off' });
+		const taxId = el('input', { type: 'text', name: 'tax_id', inputmode: 'numeric', placeholder: 'Opcional', autocomplete: 'off' });
+		const ref = el('input', { type: 'text', name: 'ref', placeholder: 'Ex.: o id do usuário no seu sistema', autocomplete: 'off' });
+		const sendEmail = el('input', { type: 'checkbox' });
+		const submit = el('button', { class: 'btn btn-primary', type: 'submit', text: 'Gerar link de conexão' });
+		const form = el(
+			'form',
+			{ class: 'client-form' },
+			el('label', {}, 'Nome da empresa', name),
+			el('label', {}, 'E-mail', email),
+			el('label', {}, 'CNPJ', taxId),
+			el('label', {}, 'Referência (ref)', ref),
+			el('label', { class: 'switch full' }, sendEmail, el('span', { text: 'Mandar o convite por e-mail também (com a marca da sua página)' })),
+			el('div', { class: 'full' }, submit),
+		);
+		form.addEventListener('submit', async (e) => {
+			e.preventDefault();
+			submit.disabled = true;
+			try {
+				const res = await api('/clients', {
+					method: 'POST',
+					body: JSON.stringify({ name: name.value, email: email.value, tax_id: taxId.value, ref: ref.value, send_email: sendEmail.checked }),
+				});
+				linkBox.replaceChildren(el('code', { text: res.connect_url }), copyBtn(res.connect_url));
+				linkBox.hidden = false;
+				toast(res.email_sent ? 'Link gerado e enviado por e-mail.' : 'Link gerado. Mande para o cliente.');
+				form.reset();
+				loadClientsTable();
+			} catch (error) {
+				toast(error.message);
+			} finally {
+				submit.disabled = false;
+			}
+		});
+
+		const tableBox = el('div', { class: 'table-wrap' });
+		const returnsBox = el('div', { class: 'table-wrap' });
+		function renderTables(d) {
+			tableBox.replaceChildren(
+				d.clients.length
+					? el(
+							'table',
+							{},
+							el('tr', {}, el('th', { text: 'Cliente' }), el('th', { text: 'Ref' }), el('th', { text: 'Situação' }), el('th', { text: 'Canais' }), el('th', { text: '' })),
+							d.clients.map((c) => {
+								const newLink = el('button', { class: 'btn', type: 'button', text: 'Link novo' });
+								newLink.addEventListener('click', async () => {
+									newLink.disabled = true;
+									try {
+										const res = await api('/clients/' + encodeURIComponent(c.id) + '/link', { method: 'POST' });
+										await navigator.clipboard.writeText(res.connect_url).catch(() => {});
+										toast('Link novo copiado. O anterior deixou de valer.');
+									} catch (error) {
+										toast(error.message);
+									} finally {
+										newLink.disabled = false;
+									}
+								});
+								return el(
+									'tr',
+									{},
+									el('td', {}, el('div', { text: c.name || c.id }), el('div', { class: 'muted', text: c.email || '' })),
+									el('td', { class: 'mono', text: c.ref || '—' }),
+									el('td', {}, pill(CLIENT_STATUS[c.status] || ['', c.status])),
+									el('td', { text: c.channels ? c.channels.split(',').map(channelType).join(', ') : '—' }),
+									el('td', {}, newLink),
+								);
+							}),
+						)
+					: el('p', { class: 'muted', text: 'Nenhum cliente ainda. Gere um link acima ou mande o link da sua página de conexão.' }),
+			);
+			returnsBox.replaceChildren(
+				d.returns.length
+					? el(
+							'table',
+							{},
+							el('tr', {}, el('th', { text: 'Quando' }), el('th', { text: 'Resultado' }), el('th', { text: 'Cliente' }), el('th', { text: 'Ref' }), el('th', { text: 'Canais' })),
+							d.returns.map((r) =>
+								el(
+									'tr',
+									{},
+									el('td', { class: 'mono', text: time(r.received_at) }),
+									el('td', {}, pill(RETURN_STATUS[r.status] || ['', r.status])),
+									el('td', { class: 'mono', text: r.client_id || '—' }),
+									el('td', { class: 'mono', text: r.ref || '—' }),
+									el('td', { text: r.channels ? r.channels.split(',').map(channelType).join(', ') : '—' }),
+								),
+							),
+						)
+					: el('p', { class: 'muted', text: 'Nenhum cliente voltou pela página ainda.' }),
+			);
+		}
+		async function loadClientsTable() {
+			try {
+				renderTables(await api('/clients'));
+			} catch (error) {
+				toast(error.message);
+			}
+		}
+
+		box.replaceChildren(
+			el(
+				'div',
+				{ class: 'steps' },
+				el(
+					'div',
+					{ class: 'card section' },
+					el('h2', { text: 'Seus clientes conectam os próprios números' }),
+					el('p', { class: 'muted', text: 'Só no modo "Integrar e oferecer aos meus clientes" da Atalia. O cliente abre o link, informa os dados da empresa, aceita os termos e conecta o WhatsApp. Quando termina, volta para este sistema e o webhook recebe client.connected.' }),
+					el('h3', { text: 'Endereço de retorno' }),
+					el('p', { class: 'muted', text: 'Cole na Atalia, em Página de conexão › Voltar para o seu sistema. O retorno chega assinado com o segredo do webhook e é conferido aqui.' }),
+					el('div', { class: 'copy-row' }, el('code', { text: data.return_url }), copyBtn(data.return_url)),
+				),
+				el('div', { class: 'card section' }, el('h2', { text: 'Gerar link para um cliente' }), el('p', { class: 'muted', text: 'Cria o cliente na Atalia e devolve o link da sua página de conexão com os dados preenchidos (vale 7 dias). O ref volta no evento e no retorno.' }), form, linkBox),
+				el('div', { class: 'card section' }, el('h2', { text: 'Clientes' }), tableBox),
+				el('div', { class: 'card section' }, el('h2', { text: 'Últimos retornos da página' }), returnsBox),
+			),
+		);
+		renderTables(data);
 	}
 
 	// ---------- atualização periódica ----------

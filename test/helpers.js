@@ -85,6 +85,18 @@ export function testEnv({ reply = 'Entregamos sim, em até 2 dias úteis!' } = {
 	const fetchMock = async (url, init) => {
 		const body = init?.body ? JSON.parse(init.body) : null;
 		sent.push({ url: String(url), method: init?.method, headers: init?.headers, body });
+		if (String(url).endsWith('/clients')) {
+			return Response.json(
+				{
+					data: {
+						client: { id: 'cli-1', name: body.name, email: body.email, tax_id: body.tax_id || null, ref: body.ref || null, status: 'invited', channels: [] },
+						connect_url: 'https://conectar.atalia.ai/medagenda?i=abc',
+						email_sent: !!body.send_email,
+					},
+				},
+				{ status: 201 },
+			);
+		}
 		if (String(url).endsWith('/messages')) {
 			n += 1;
 			return Response.json({ data: { id: `msg-out-${n}`, status: 'pending', conversation_id: body.conversation_id } }, { status: 202 });

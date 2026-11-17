@@ -10,12 +10,15 @@ import {
 	getAgent,
 	getConversation,
 	lastRejection,
+	listClients,
 	listConversations,
 	listMessages,
 	markRead,
+	recentConnectReturns,
 	recentEvents,
 	saveAgent,
 	setBotPaused,
+	upsertClient,
 } from './store.js';
 
 const json = (body, status = 200) => Response.json(body, { status });
@@ -100,6 +103,7 @@ export async function handleAdmin(request, env, url) {
 		}
 		return json({
 			webhook_url: `${url.origin}/webhook`,
+			return_url: `${url.origin}/retorno`,
 			api_key: !!env.ATALIA_API_KEY,
 			webhook_secret: webhookSecretState(env),
 			channels,
@@ -107,6 +111,41 @@ export async function handleAdmin(request, env, url) {
 			last_rejection: await lastRejection(db),
 			events: await recentEvents(db),
 		});
+	}
+
+	// ---- Revenda: clientes e links da página de conexão ----
+	if (path === '/clients' && request.method === 'GET') {
+		return json({ clients: await listClients(db), returns: await recentConnectReturns(db), return_url: `${url.origin}/retorno` });
+	}
+
+	if (path === '/clients' && request.method === 'POST') {
+		const name = String(body.name || '').trim();
+		const email = String(body.email || '').trim();
+		if (!name || !email) return json({ error: 'Informe o nome e o e-mail do cliente.' }, 400);
+		try {
+			const data = await createAtaliaClient(env).createClient({
+				name,
+				email,
+				taxId: String(body.tax_id || '').replace(/\D/g, '') || null,
+				ref: String(body.ref || '').trim() || null,
+				sendEmail: !!body.send_email,
+			});
+			const c = data.client;
+			await upsertClient(db, { id: c.id, name: c.name, email: c.email, taxId: c.tax_id, ref: c.ref, status: c.status || 'invited', connectUrl: data.connect_url });
+			return json({ client: c, connect_url: data.connect_url, email_sent: !!data.email_sent });
+		} catch (error) {
+			return json({ error: error.code ? `${error.code}: ${error.message}` : error.message }, 502);
+		}
+	}
+
+	if ((match = path.match(/^\/clients\/([^/]+)\/link$/)) && request.method === 'POST') {
+		try {
+			const data = await createAtaliaClient(env).newClientLink(match[1]);
+			await upsertClient(db, { id: match[1], status: 'invited', connectUrl: data.connect_url });
+			return json({ connect_url: data.connect_url });
+		} catch (error) {
+			return json({ error: error.code ? `${error.code}: ${error.message}` : error.message }, 502);
+		}
 	}
 
 	if (path === '/webhook-test' && request.method === 'POST') {

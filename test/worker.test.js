@@ -202,3 +202,69 @@ describe('regras do agente', () => {
 		expect(agent).not.toHaveProperty('extra');
 	});
 });
+
+describe('revenda: retorno da página de conexão e clientes', () => {
+	const returnUrl = async ({ status = 'connected', clientId = 'cli-9', ref = 'usuario-8812', channels = 'whatsapp', t = Math.floor(Date.now() / 1000), secret = SECRET } = {}) => {
+		const sig = await hmacHex(secret, `${t}.${status}.${clientId}.${ref}.${channels}`);
+		const q = new URLSearchParams({ status, t: String(t), sig });
+		if (clientId) q.set('client_id', clientId);
+		if (ref) q.set('ref', ref);
+		if (channels) q.set('channels', channels);
+		return `https://agente.exemplo.workers.dev/retorno?${q}`;
+	};
+	const open = async (url) => worker.fetch(new Request(url), t.env, t.ctx);
+
+	it('retorno assinado: mostra "Tudo certo", grava o retorno e o cliente; recarregar não duplica', async () => {
+		const url = await returnUrl();
+		const res = await open(url);
+		expect(res.status).toBe(200);
+		expect(await res.text()).toContain('Tudo certo!');
+		await open(url);
+		expect(rows('SELECT status, client_id, ref, channels FROM connect_returns')).toEqual([
+			{ status: 'connected', client_id: 'cli-9', ref: 'usuario-8812', channels: 'whatsapp' },
+		]);
+		expect(rows('SELECT id, status, ref FROM clients')).toEqual([{ id: 'cli-9', status: 'connected', ref: 'usuario-8812' }]);
+	});
+
+	it('assinatura errada ou retorno velho: 400 e nada gravado; desistência sem cliente ainda vale', async () => {
+		expect((await open(await returnUrl({ secret: 'whsec_outro' }))).status).toBe(400);
+		expect((await open(await returnUrl({ t: Math.floor(Date.now() / 1000) - 600 }))).status).toBe(400);
+		expect(rows('SELECT * FROM connect_returns')).toHaveLength(0);
+
+		const cancelled = await open(await returnUrl({ status: 'cancelled', clientId: '', channels: '' }));
+		expect(cancelled.status).toBe(200);
+		expect(await cancelled.text()).toContain('Conexão não concluída');
+		expect(rows('SELECT * FROM clients')).toHaveLength(0);
+	});
+
+	it('client.connected no webhook grava o cliente com o ref e os canais', async () => {
+		await deliver({
+			id: 'evt_cli',
+			type: 'client.connected',
+			client_id: 'cli-9',
+			channel: null,
+			data: { client: { id: 'cli-9', name: 'Clínica', email: 'a@b.com', tax_id: '11222333000181' }, channels: ['whatsapp', 'instagram'], ref: 'usuario-8812' },
+		});
+		expect(rows('SELECT name, ref, status, channels FROM clients')).toEqual([{ name: 'Clínica', ref: 'usuario-8812', status: 'connected', channels: 'whatsapp,instagram' }]);
+	});
+
+	it('painel: gerar link manda o ref para a Atalia e guarda o link', async () => {
+		const res = await worker.fetch(
+			new Request('https://agente.exemplo.workers.dev/admin/api/clients', {
+				method: 'POST',
+				headers: { Authorization: `Basic ${btoa('a:senha')}`, 'Content-Type': 'application/json', 'X-Admin': '1' },
+				body: JSON.stringify({ name: 'Clínica', email: 'a@b.com', tax_id: '11.222.333/0001-81', ref: 'usuario-8812' }),
+			}),
+			t.env,
+			t.ctx,
+		);
+		expect(res.status).toBe(200);
+		expect((await res.json()).connect_url).toBe('https://conectar.atalia.ai/medagenda?i=abc');
+		const call = t.sent.find((s) => s.url.endsWith('/clients'));
+		expect(call.body).toEqual({ name: 'Clínica', email: 'a@b.com', tax_id: '11222333000181', ref: 'usuario-8812', send_email: false });
+		expect(rows('SELECT id, ref, status, connect_url FROM clients')).toEqual([
+			{ id: 'cli-1', ref: 'usuario-8812', status: 'invited', connect_url: 'https://conectar.atalia.ai/medagenda?i=abc' },
+		]);
+	});
+});
+

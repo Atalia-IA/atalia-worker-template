@@ -20,6 +20,7 @@ import {
 	releaseEvent,
 	setBotPaused,
 	updateMessageStatus,
+	upsertClient,
 	upsertConversation,
 } from './store.js';
 
@@ -75,6 +76,10 @@ function summarize(event) {
 			return `${event.data?.status} (${event.data?.message_id})`;
 		case 'ping':
 			return 'Teste enviado pela Atalia';
+		case 'client.connected':
+			return `${event.data?.client?.name || 'Cliente'} conectou (${(event.data?.channels || []).join(', ')})`;
+		case 'client.no_slot':
+			return `${event.data?.client?.name || 'Cliente'} tentou conectar sem vaga no pacote`;
 		default:
 			return event.channel?.id ? `Canal ${event.channel.id}` : null;
 	}
@@ -132,7 +137,24 @@ async function applyEvent(env, event) {
 			return null;
 		}
 
-		// ping, channel.*, client.*: ficam só na lista de eventos (aba Conexão)
+		// Revenda: o cliente conectou o primeiro canal pela página de conexão, ou ficou sem vaga
+		case 'client.connected':
+		case 'client.no_slot': {
+			const client = event.data?.client;
+			if (!client?.id) return null;
+			await upsertClient(db, {
+				id: client.id,
+				name: client.name ?? null,
+				email: client.email ?? null,
+				taxId: client.tax_id ?? null,
+				ref: event.data?.ref ?? null,
+				status: event.type === 'client.connected' ? 'connected' : 'no_slot',
+				channels: Array.isArray(event.data?.channels) ? event.data.channels.join(',') : null,
+			});
+			return null;
+		}
+
+		// ping e channel.*: ficam só na lista de eventos (aba Conexão)
 		default:
 			return null;
 	}
